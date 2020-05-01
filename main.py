@@ -2,72 +2,107 @@ import os
 import eyed3
 from typing import List, Tuple, Optional, NamedTuple, Dict
 import argparse
+
+
 parser = argparse.ArgumentParser()
 parser.add_argument('-s', '--src-dir', help='целевая директория, по умолчанию директория в которой запущен скрипт')
 parser.add_argument('-d', '--dist-dir', help='целевая директория, по умолчанию директория в которой запущен скрипт')
 args = parser.parse_args()
 
-
 class ID3Tags(NamedTuple):
+    """
+    'C-like' struct for id3 tags
+    """
     artist: str
     album: str
     title: str
 
-def get_file_in_dir(path : str, exts : List[str]) -> List[str]:
-    res : List[str] = []
+def get_mp3_in_dir(path: str) -> List[str]:
+    """
+    Receiving mp3 files in a directory
+    """
+    res: List[str] = []
     for f in os.listdir(path):
-        file_ext : str = os.path.splitext(f)[1]
-        if os.path.isfile(os.path.join(path, f)) and file_ext in exts:
-            res.append(f) # TODO лучше fullpath 
+        file_ext: str = os.path.splitext(f)[1]
+        if os.path.isfile(os.path.join(path, f)) and file_ext == '.mp3':
+            res.append(os.path.join(path, f))
     return res
 
-def get_id3tags(path : str) -> ID3Tags:
-    audio = eyed3.load(path)
+def get_id3tags(path_mp3: str) -> ID3Tags:
+    """
+    Gets id3 tags from mp3 file
+    """
+    audio = eyed3.load(path_mp3)
     return ID3Tags(audio.tag.artist, audio.tag.album, audio.tag.title)
 
 
-def create_music_path(music : str, dist_path : str) -> str:
-    newpath :str
-    tags : ID3Tags = get_id3tags(music)
-    filename : str = tags.title if tags.title != None else os.path.splitext(music)[0]
+def create_music_path(music: str, dist_path: str) -> str:
+    """
+    Creates a new path for mp3 based on id3 tags and target directory
+    Params
+    ------------------
+    music : str
+        Path to mp3
+    dist_path : str
+        Target path
+    Returns
+    ------------------
+    str
+        New path to mp3
+    """
+    newpath: str
+    tags: ID3Tags = get_id3tags(music)
+    filename: str = tags.title if tags.title != None else os.path.splitext(os.path.basename(music))[0]
     if tags.album == None or tags.artist == None:
-        newpath = os.path.join(os.getcwd(), f'{filename}.mp3')
+        newpath = music
     else:
         newpath = os.path.join(dist_path, tags.artist, tags.album, f'{filename} - {tags.artist} - {tags.album}.mp3')
     return newpath
 
-def is_valid_dir(path : str):
-    is_valid = True
-    if os.path.exists(path):
-        print(f'Каталог {path} не существует')
-        is_valid = False
-    if (os.path.isdir(path)):
-        print(f'{path} не является каталогом')
-        is_valid = False
-    if os.access(path, os.R_OK): # TODO допроверять
-        print(f'{path} нет доступа на чтение')
-        is_valid = False
-    return is_valid 
-
-def renames_file(files : Dict[str, str]):
-    for old, new in files.items():
-        print(f'\033[31m{old} -> \033[37m{new}')
-        os.renames(old, new)
+def valid_dir(path: str, access_mode: int = os.W_OK) -> str:
+    """
+    Check catalogs for validity
+    Params
+    ------------------
+    path: str
+        Path to dir
+    access_mode: int
+        Mode from os lib
+    Returns
+    ------------------
+    str
+        Error message
+    """
+    err_msg: str = ""
+    if not os.path.exists(path):
+        err_msg += f'Каталог {path} не существует\n'
+    if err_msg != "" and not os.path.isdir(path):
+        err_msg += f'{path} не является каталогом\n'
+    if err_msg != "" and access_mode == os.R_OK and not os.access(path, access_mode):
+        err_msg += f'{path} нет доступа на чтение\n'
+    if err_msg != "" and access_mode == os.W_OK and not os.access(path, access_mode):
+        err_msg += f'{path} нет доступа на запись\n'
+    return err_msg 
 
 def main():
-    src_dir : str = args.src_dir if args.src_dir != None else os.getcwd()
-    dist_dir : str = args.dist_dir if args.dist_dir != None else os.getcwd()
-    if not is_valid_dir(src_dir) or not is_valid_dir(dist_dir):
+    """
+    The basic process of sorting mp3 files
+    """
+    src_dir: str = args.src_dir if args.src_dir != None else os.getcwd()
+    dist_dir: str = args.dist_dir if args.dist_dir != None else os.getcwd()
+    src_valid: str = valid_dir(src_dir, os.R_OK)
+    dist_valid: str = valid_dir(dist_dir, os.W_OK)
+    if src_valid != "" or dist_valid != "":
+        print(src_valid)
+        print(dist_valid)
         return
-    os.chdir(src_dir) # TODO прочекать есть ли вообще смысл
-    musics : List[str] = get_file_in_dir(os.getcwd(), ['.mp3'])
-    musics_old_new : Dict[str, str] = dict()
+    musics: List[str] = get_mp3_in_dir(src_dir)
     for m in musics:
         try:
-            m_full_path = os.path.join(os.getcwd(), m)
-            musics_old_new[m_full_path] = create_music_path(m, dist_dir)
+            new_path: str = create_music_path(m, dist_dir)
+            os.renames(m, new_path)
+            print(f'\033[31m{m} -> \033[37m{new_path}')
         except IOError as e: 
             print(e)
-    renames_file(musics_old_new)
 
 main()
