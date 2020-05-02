@@ -100,6 +100,10 @@ def main():
     for m in musics:
         try:
             new_path: str = create_music_path(m, dist_dir)
+            if m == new_path:
+                continue
+            if os.path.exists(new_path):
+                os.remove(new_path)
             os.renames(m, new_path)
             print(f'\033[31m{m} -> \033[37m{new_path}')
         except IOError as e: 
